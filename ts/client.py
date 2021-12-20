@@ -245,7 +245,7 @@ class TradeStationClient():
         return self._authorize()
 
 
-    def complete_login(self, full_redirect_uri: str) -> bool:
+    async def complete_login(self, full_redirect_uri: str) -> bool:
         """Logs the user into a new session.
 
         Overview:
@@ -264,7 +264,7 @@ class TradeStationClient():
         """
 
         # Grab the access token.
-        if self._grab_access_token(full_redirect_uri):
+        if await self._grab_access_token(full_redirect_uri):
 
             # update the authentication state
             self.authstate = True
