@@ -3,7 +3,7 @@ import time
 import json
 
 import requests
-import urllib.parse
+from urllib.parse import urlparse, parse_qs, urlencode
 
 from typing import List
 from typing import Dict
@@ -23,10 +23,10 @@ class TradeStationClient():
 
         Implements OAuth 2.0 Authorization Code Grant workflow, handles configuration
         and state management, adds token for authenticated calls, and performs request 
-        to the TD Ameritrade API.
+        to the TradeStation API.
     """
 
-    def __init__(self, username: str, client_id: str, client_secret: str, redirect_uri: str, paper_trading: bool = True) -> None:
+    def __init__(self, client_id: str, client_secret: str, redirect_uri: str, scope: list, paper_trading: bool = True, username: Optional[str] = None) -> None:
         """Initalizes the Tradestation Client object.
 
         Arguments:
@@ -41,6 +41,9 @@ class TradeStationClient():
 
         redirect_uri (str): This is the redirect URL that you specified when you created your
             Tradestation Application.
+
+        A list of scopes (list(str)) (case sensitive). 'openid' scope is always required. offline_access is required for Refresh Tokens.
+            Example: ['openid', 'profile', 'offline_access', 'MarketData', 'ReadAccount', 'Trade', 'Crypto']. 
 
         paper_trading (bool, optional): Specifies whether you want to use the simulation account or not. 
             Defaults to True.
@@ -65,12 +68,13 @@ class TradeStationClient():
             'redirect_uri': redirect_uri,
             'resource': 'https://api.tradestation.com',
             'paper_resource': 'https://sim-api.tradestation.com',
-            'api_version': 'v2',
-            'paper_api_version': 'v2',
-            'auth_endpoint': 'https://api.tradestation.com/v2/Security/Authorize',
+            'api_version': 'v3',
+            'paper_api_version': 'v3',
+            'auth_endpoint': 'https://signin.tradestation.com/oauth/token',
             'cache_state': True,
             'refresh_enabled': True,
-            'paper_trading': paper_trading
+            'paper_trading': paper_trading,
+            'scope': ' '.join(scope)
         }
 
         # initalize the client to either use paper trading account or regular account.
@@ -185,10 +189,11 @@ class TradeStationClient():
             'logged_in': False
         }
 
-        # Grab the current directory of the client file, that way we can store the JSON file in the same folder.
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        filename = 'ts_state.json'
-        file_path = os.path.join(dir_path, filename)
+        # Grab the current directory of the client file, that way we can store the JSON file in the config folder.
+        dir_path = os.getcwd()
+        config_dir = "config"
+        filename = self.config['client_id'] + '_ts_state.json'
+        file_path = os.path.join(dir_path, config_dir, filename)
 
         # If the state is initalized.
         if action == 'init':
@@ -210,52 +215,79 @@ class TradeStationClient():
             with open(file=file_path, mode='w+') as state_file:
                 json.dump(obj=self.state, fp=state_file, indent=4)
 
-    def login(self) -> bool:
+    async def login(self) -> Union[str,bool]:
         """Logs the user into a new session.
 
         Overview:
         ---
-        Ask the user to authenticate  themselves via the TD Ameritrade Authentication Portal. This will
-        create a URL, display it for the User to go to and request that they paste the final URL into
-        command window.
 
-        Once the user is authenticated the API key is valide for 90 days, so refresh tokens may be used
-        from this point, up to the 90 days.
+        Partial for authenticating the user via the TradeStation Authentication Portal. This will
+        create a URL where the user will follow to login.
 
         Returns:
         ----
-        (bool): `True` if the session was logged in, `False` otherwise.
+        (str): The authorisation url where the user can login to TradeStation.
+        (bool): if silent sso was completed and user is logged in
         """
 
         # if caching is enabled then attempt silent authentication.
         if self.config['cache_state']:
 
             # if it was successful, the user is authenticated.
-            if self._silent_sso():
+            if await self._silent_sso():
 
                 # update the authentication state
                 self.authstate = True
+                print(f".....Silent Authentication {self.config['client_id']}")
                 return True
 
-        # Go through the authorization process.
-        self._authorize()
+        # Build authorization url and return
+        return self._authorize()
+
+
+    def complete_login(self, full_redirect_uri: str) -> bool:
+        """Logs the user into a new session.
+
+        Overview:
+        ---
+
+        Once the user is authenticated the API key is valide for 90 days, so refresh tokens may be used
+        from this point, up to the 90 days.
+
+        Arguments:
+        ----
+        full_redirect_uri (str): Full url with contains authorization token redirected from TradeStation
+
+        Returns:
+        ----
+        (bool): `True` if the session was logged in, `False` otherwise.
+        """
 
         # Grab the access token.
-        self._grab_access_token()
+        if self._grab_access_token(full_redirect_uri):
 
-        # update the authentication state
-        self.authstate = True
+            # update the authentication state
+            self.authstate = True
+            return True
 
-        return True
+        return False
 
-    def logout(self) -> None:
+    def logout(self, temporary: bool = False) -> None:
         """Clears the current TradeStation Connection state."""
 
         # change state to initalized so they will have to either get a
         # new access token or refresh token next time they use the API
+
+        if not temporary:
+            url = 'https://signin.tradestation.com/v2/logout?'
+            args = {
+                'returnTo': self.config['redirect_uri'] + '/logout',
+                'client_id': self.config['client_id']
+            }
+            self._handle_requests(url, method='get', args=args)
         self._state_manager('init')
 
-    def _grab_access_token(self) -> bool:
+    async def _grab_access_token(self, full_redirect_uri: str) -> bool:
         """Grabs an access token.
 
         Overview:
@@ -264,13 +296,17 @@ class TradeStationClient():
         authorization code parsed from the auth endpoint to call the
         token endpoint and obtain an access token.
 
+        Arguments:
+        ----
+        full_redirect_uri (str): Full url with contains authorization token redirected from TradeStation
+
         Returns:
         ----
         (bool): `True` if grabbing the access token was successful. `False` otherwise.
         """
 
         # Parse the URL
-        url_dict = urllib.parse.parse_qs(self.state['redirect_code'])
+        url_dict = parse_qs(urlparse(full_redirect_uri).query)
 
         # Convert the values to a list.
         url_values = list(url_dict.values())
@@ -301,7 +337,7 @@ class TradeStationClient():
         else:
             return False
 
-    def _silent_sso(self) -> bool:
+    async def _silent_sso(self) -> bool:
         """Handles the silent authentication workflow.
 
         Overview:
@@ -316,18 +352,18 @@ class TradeStationClient():
         """
 
         # if it's not expired we don't care.
-        if self._token_validation():
+        if (await self._token_validation()):
             return True
 
         # if the current access token is expired then try and refresh access token.
-        elif self.state['refresh_token'] and self._grab_refresh_token():
+        elif self.state['refresh_token'] and await self._grab_refresh_token():
             return True
 
         # More than likely a first time login, so can't do silent authenticaiton.
         else:
             return False
 
-    def _grab_refresh_token(self) -> bool:
+    async def _grab_refresh_token(self) -> bool:
         """Refreshes the current access token if it's expired.
 
         Returns:
@@ -340,7 +376,7 @@ class TradeStationClient():
             'client_id': self.config['client_id'],
             'client_secret': self.config['client_secret'],
             'grant_type': 'refresh_token',
-            'response_type': 'token',
+            # 'response_type': 'token',
             'refresh_token': self.state['refresh_token']
         }
 
@@ -348,7 +384,8 @@ class TradeStationClient():
         response = requests.post(
             url=self.config['auth_endpoint'],
             data=data,
-            verify=True
+            verify=True,
+            headers= {'content-type': 'application/x-www-form-urlencoded'}
         )
 
         # Save the token if the response was okay.
@@ -428,7 +465,7 @@ class TradeStationClient():
 
         return token_exp
 
-    def _token_validation(self, nseconds: int = 5) -> None:
+    async def _token_validation(self, nseconds: int = 5) -> None:
         """Validates the Access Token.
 
         Overview:
@@ -444,9 +481,9 @@ class TradeStationClient():
         """
 
         if self._token_seconds() < nseconds and self.config['refresh_enabled']:
-            self._grab_refresh_token()
+            await self._grab_refresh_token()
 
-    def _authorize(self) -> None:
+    def _authorize(self) -> str:
         """Authorizes the session.
 
         Overview:
@@ -454,34 +491,30 @@ class TradeStationClient():
         Initalizes the oAuth Workflow by creating the URL that
         allows the user to login to the Tradestation API using their credentials
         and then will parse the URL that they paste back into the terminal.
+
+        Returns:
+        ----
+        (str): The authorisation url where the user can login to TradeStation.
         """
 
         # prepare the payload to login
         data = {
             'response_type': 'code',
+            'client_id': self.config['client_id'],
+            'audience': self.config['resource'],
             'redirect_uri': self.config['redirect_uri'],
-            'client_id': self.config['client_id']
+            'scope': self.config['scope']
         }
 
         # url encode the data.
-        params = urllib.parse.urlencode(data)
+        params = urlencode(data)
 
         # build the full URL for the authentication endpoint.
-        url = 'https://api.tradestation.com/v2/authorize?' + params
+        url = 'https://signin.tradestation.com/authorize?' + params
 
-        # aks the user to go to the URL provided, they will be prompted to authenticate themsevles.
-        print('')
-        print('='*80)
-        print('')
-        print('Please go to URL provided authorize your account: {}'.format(url))
-        print('')
-        print('-'*80)
-
-        # ask the user to take the final URL after authentication and paste here so we can parse.
-        my_response = input('Paste the full URL redirect here: ')
-
-        # store the redirect URL
-        self.state['redirect_code'] = my_response
+        self.auth_login_url = url
+        
+        return self.auth_login_url
 
     def _handle_requests(self, url: str, method: str, headers: dict = {}, args: dict = None, stream: bool = False, payload: dict = None) -> dict:
         """[summary]
@@ -535,8 +568,8 @@ class TradeStationClient():
                 response = requests.post(
                     url=url, headers=headers, params=args, verify=True)
             else:
-                response = requests.post(
-                    url=url, headers=headers, params=args, verify=True, json=payload)
+                # response = requests.request('POST', url=url, headers=headers, json=payload)
+                response = requests.post(url=url, headers=headers, params=args, verify=True, json=payload)
 
         elif method == 'put':
 
@@ -564,11 +597,12 @@ class TradeStationClient():
 
         if status_code == 200:
 
-            if response_headers['Content-Type'] == 'application/json; charset=utf-8':
+            if (response_headers.get('Content-Type') == 'application/json; charset=utf-8') or (response_headers.get('Content-Type') == 'application/json'):
                 return response.json()
-            elif response_headers['Transfer-Encoding'] == 'chunked':
+            elif response_headers.get('Transfer-Encoding') == 'chunked':
 
                 return streamed_content
+            else: return response.text
 
         else:
             # Error
@@ -576,13 +610,13 @@ class TradeStationClient():
             print('-'*80)
             print("BAD REQUEST - STATUS CODE: {}".format(status_code))
             print("RESPONSE URL: {}".format(response.url))
-            print("RESPONSE HEADERS: {}".format(response.headers))
-            print("RESPONSE TEXT: {}".format(response.text))
+            print("RESPONSE HEADERS: {}".format(response_headers))
+            print("RESPONSE TEXT: {}".format(response.json()))
             print('-'*80)
             print('')
+            return response.json()
 
-
-    def user_accounts(self, user_id: str) -> dict:
+    async def user_accounts(self) -> dict:
         """Grabs all the accounts associated with the User.
 
         Arguments:
@@ -595,35 +629,35 @@ class TradeStationClient():
         """
 
         # validate the token.
-        self._token_validation()
+        await self._token_validation()
 
         # define the endpoint.
         url_endpoint = self._api_endpoint(
-            url='users/{username}/accounts'.format(username=user_id)
+            url='brokerage/accounts'
         )
-
-        # define the arguments
-        params = {
-            'access_token': self.state['access_token']
-        }
 
         # grab the response.
         response = self._handle_requests(
             url=url_endpoint,
             method='get',
-            args=params
+            headers= self.headers()
         )
 
-        return response
+        if response:
+            self.config['AccountID'] = [(x['AccountID'], x['AccountType']) for x in response['Accounts']]
 
-    def account_balances(self, account_keys: List[str]) -> dict:
+            return response
+        else:
+            raise Exception('Failed to get user account')
+
+    async def account_balances(self, account_keys: List[str] = None) -> dict:
         """Grabs all the balances for each account provided.
 
         Args:
         ----
         account_keys (List[str]): A list of account numbers. Can only be a max
             of 25 account numbers
-
+            
         Raises:
         ----
         ValueError: If the list is more than 25 account numbers will raise an error.
@@ -633,10 +667,16 @@ class TradeStationClient():
         dict: A list of account balances for each of the accounts.
         """
 
+        if not account_keys:
+            if "AccountID" not in self.config:
+                await self.user_accounts()
+            
+            account_keys: List[str] = [x[0] for x in self.config['AccountID']]
+        
         if isinstance(account_keys, list):
 
             # validate the token.
-            self._token_validation()
+            await self._token_validation()
 
             # argument validation.
             if len(account_keys) == 0:
@@ -650,35 +690,27 @@ class TradeStationClient():
 
             # define the endpoint.
             url_endpoint = self._api_endpoint(
-                url='accounts/{account_numbers}/balances'.format(
-                    account_numbers=account_keys)
-            )
-
-            # define the arguments
-            params = {
-                'access_token': self.state['access_token']
-            }
+                url='brokerage/accounts/{accounts}/balances'.format(
+                    accounts=account_keys)
+            ) 
 
             # grab the response.
             response = self._handle_requests(
                 url=url_endpoint,
                 method='get',
-                args=params
+                headers=self.headers()
             )
-
             return response
 
         else:
             raise ValueError("Account Keys, must be a list object")
 
-    def account_positions(self, account_keys: List[str], symbols: List[str]) -> dict:
+    async def account_positions(self, account_keys: Optional[List[str]]= None) -> dict:
         """Grabs all the account positions.
 
         Arguments:
         ----
         account_keys (List[str]): A list of account numbers..
-
-        symbols (List[str]): A list of ticker symbols, you want to return.
 
         Raises:
         ----
@@ -689,10 +721,77 @@ class TradeStationClient():
         dict: A list of account balances for each of the accounts.
         """
 
+        # get account_keys
+        if not account_keys:
+            if "AccountID" not in self.config:
+                await self.user_accounts()
+            
+            account_keys: List[str] = [x[0] for x in self.config['AccountID']]
+
         if isinstance(account_keys, list):
 
             # validate the token.
-            self._token_validation()
+            await self._token_validation()
+
+            # argument validation, account keys.
+            if len(account_keys) == 0:
+                raise ValueError(
+                    "You cannot pass through an empty list for account keys.")
+            elif len(account_keys) > 25:
+                raise ValueError(
+                    "You cannot pass through more than 25 account keys.")
+            else:
+                account_keys = ','.join(account_keys)
+
+            # define the endpoint.
+            url_endpoint = self._api_endpoint(
+                url='brokerage/accounts/{account_numbers}/positions'.format(
+                    account_numbers=account_keys
+                )
+            )
+
+            # grab the response.
+            response = self._handle_requests(
+                url=url_endpoint,
+                method='get',
+                headers=self.headers()
+            )
+            return response
+
+        else:
+            raise ValueError("Account Keys, must be a list object")
+
+    async def get_orders(self, account_keys: Optional[List[str]] = None) -> dict:
+        """Grab all the account orders for a list of accounts.
+
+        Overview:
+        ----
+        This endpoint is used to grab all the order for the day from a list of accounts provided.
+
+        Arguments:
+        ----
+        account_keys (optional) (List[str]): A list of account numbers.
+
+        Raises:
+        ----
+        ValueError: If the list is more than 25 account numbers will raise an error.
+
+        Returns:
+        ----
+        dict: A list of account balances for each of the accounts.
+        """
+
+        # get account_keys
+        if not account_keys:
+            if "AccountID" not in self.config:
+                await self.user_accounts()
+            
+            account_keys: List[str] = [x[0] for x in self.config['AccountID']]
+
+        if isinstance(account_keys, list):
+
+            # validate the token.
+            await self._token_validation()
 
             # argument validation, account keys.
             if len(account_keys) == 0:
@@ -704,43 +803,17 @@ class TradeStationClient():
                 raise ValueError(
                     "You cannot pass through more than 25 account keys.")
 
-            # argument validation, symbols.
-            if symbols is not None:
-
-                if len(symbols) == 0:
-                    raise ValueError(
-                        "You cannot pass through an empty symbols list for the filter.")
-                else:
-
-                    symbols_formatted = []
-                    for symbol in symbols:
-                        symbols_formatted.append(
-                            "Symbol eq '{}'".format(symbol)
-                        )
-
-                    symbols = 'or '.join(symbols_formatted)
-                    params = {
-                        'access_token': self.state['access_token'],
-                        '$filter': symbols
-                    }
-
-            else:
-                params = {
-                    'access_token': self.state['access_token']
-                }
-
             # define the endpoint.
             url_endpoint = self._api_endpoint(
-                url='accounts/{account_numbers}/positions'.format(
-                    account_numbers=account_keys
-                )
+                url='brokerage/accounts/{account_numbers}/orders'.format(
+                    account_numbers=account_keys)
             )
 
             # grab the response.
             response = self._handle_requests(
                 url=url_endpoint,
                 method='get',
-                args=params
+                headers=self.headers()
             )
 
             return response
@@ -748,7 +821,7 @@ class TradeStationClient():
         else:
             raise ValueError("Account Keys, must be a list object")
 
-    def account_orders(self, account_keys: List[str], since: int, page_size: int, page_number: int = 0) -> dict:
+    async def get_historical_orders(self, since: int, account_keys: Optional[List[str]] = None) -> dict:
         """Grab all the account orders for a list of accounts.
 
         Overview:
@@ -758,13 +831,9 @@ class TradeStationClient():
 
         Arguments:
         ----
-        account_keys (List[str]): A list of account numbers.
+        account_keys (optional) (List[str]): A list of account numbers.
 
         since (int): Number of days to look back, max is 14 days.
-
-        page_size (int): The page size.
-
-        page_number (int, optional): The page number to return if more than one. Defaults to 0.
 
         Raises:
         ----
@@ -775,10 +844,17 @@ class TradeStationClient():
         dict: A list of account balances for each of the accounts.
         """
 
+        # get account_keys
+        if not account_keys:
+            if "AccountID" not in self.config:
+                await self.user_accounts()
+            
+            account_keys: List[str] = [x[0] for x in self.config['AccountID']]
+
         if isinstance(account_keys, list):
 
             # validate the token.
-            self._token_validation()
+            await self._token_validation()
 
             # argument validation, account keys.
             if len(account_keys) == 0:
@@ -807,15 +883,12 @@ class TradeStationClient():
                 date_format = None
 
             params = {
-                'access_token': self.state['access_token'],
-                'since': date_format,
-                'pageSize': page_size,
-                'pageNum': page_number
+                'since': date_format
             }
 
             # define the endpoint.
             url_endpoint = self._api_endpoint(
-                url='accounts/{account_numbers}/orders'.format(
+                url='brokerage/accounts/{account_numbers}/orders'.format(
                     account_numbers=account_keys)
             )
 
@@ -823,6 +896,7 @@ class TradeStationClient():
             response = self._handle_requests(
                 url=url_endpoint,
                 method='get',
+                headers=self.headers(),
                 args=params
             )
 
@@ -831,7 +905,7 @@ class TradeStationClient():
         else:
             raise ValueError("Account Keys, must be a list object")
 
-    def symbol_info(self, symbol: str) -> dict:
+    async def search_for_symbol(self, symbol: str, asset_category: str = None) -> dict:
         """Grabs the info for a particular symbol
 
         Arguments:
@@ -848,28 +922,34 @@ class TradeStationClient():
         """
 
         # validate the token.
-        self._token_validation()
+        await self._token_validation()
 
         if symbol is None:
             raise ValueError("You must pass through a symbol.")
 
-        # define the endpoint.
-        url_endpoint = self._api_endpoint(
-            url='data/symbol/{ticker_symbol}'.format(ticker_symbol=symbol)
-        )
-
-        # define the arguments.
-        params = {
-            'access_token': self.state['access_token']
+        # define the criteria
+        if asset_category is None:
+            C = 'SO' # Stock Option, Index Option
+        else: C = asset_category
+        data = {
+            'C': C,
+            'R': symbol,
+            'Exd': '100',
+            'Stk': '1000'
         }
+        criteria = urlencode(data)
+
+        # define the endpoint.
+        url_endpoint = '/'.join([self.config['paper_resource'],
+        'v2',
+        f'data/symbols/search/{criteria}'])
 
         # grab the response.
         response = self._handle_requests(
             url=url_endpoint,
             method='get',
-            args=params
+            headers=self.headers()
         )
-
         return response
 
     def quotes(self, symbols: List[str]) -> dict:
@@ -1451,7 +1531,7 @@ class TradeStationClient():
 
         return response
 
-    def confirm_order(self, order: dict) -> dict:
+    async def confirm_order(self, order: dict) -> dict:
         """Confirm an order.
 
         Arguments:
@@ -1463,23 +1543,21 @@ class TradeStationClient():
         dict: A confirmation of the order.
         """
         # validate the token.
-        self._token_validation()
+        await self._token_validation()
 
         # define the endpoint.
-        url_endpoint = self._api_endpoint(url='orders/confirm')
-
-        # define the arguments.
-        params = {
-            'access_token': self.state['access_token']
-        }
+        url_endpoint = self._api_endpoint(url='orderexecution/orderconfirm')
 
         # grab the response.
         response = self._handle_requests(
-            url=url_endpoint, method='post', args=params, payload=order)
+            url=url_endpoint, 
+            method='post', 
+            headers=self.headers(), 
+            payload=order)
 
         return response
 
-    def submit_order(self, order: dict) -> dict:
+    async def submit_order(self, order: dict) -> dict:
         """Submit an order.
 
         Arguments:
@@ -1492,27 +1570,21 @@ class TradeStationClient():
         """
 
         # validate the token.
-        self._token_validation()
 
         # define the endpoint.
-        url_endpoint = self._api_endpoint(url='orders')
-
-        # define the arguments.
-        params = {
-            'access_token': self.state['access_token']
-        }
+        url_endpoint = self._api_endpoint(url='orderexecution/orders')
 
         # grab the response.
         response = self._handle_requests(
             url=url_endpoint,
             method='post',
-            args=params,
+            headers=self.headers('application/json'),
             payload=order
         )
 
         return response
 
-    def cancel_order(self, order_id: str) -> dict:
+    async def cancel_order(self, order_id: str) -> dict:
         """Cancel an order.
 
         Arguments:
@@ -1525,22 +1597,18 @@ class TradeStationClient():
         """
 
         # validate the token.
-        self._token_validation()
+        await self._token_validation()
 
         # define the endpoint.
         url_endpoint = self._api_endpoint(
-            url='orders/{order_id}'.format(order_id=order_id))
+            url='orderexecution/orders/{order_id}'.format(order_id=order_id))
 
-        # define the arguments.
-        params = {
-            'access_token': self.state['access_token']
-        }
 
         # grab the response.
         response = self._handle_requests(
             url=url_endpoint,
             method='delete',
-            args=params
+            headers=self.headers()
         )
 
         return response

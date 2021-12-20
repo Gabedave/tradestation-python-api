@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 setup(
 
     # this will be my Library name.
-    name='tradestation-python-api',
+    name='ts',
 
     # Want to make sure people know who made it.
     author='Alex Reed',
@@ -40,7 +40,7 @@ setup(
     keywords='finance, tradestation, api, trading',
 
     # here are the packages I want "build."
-    packages=find_packages(include=['tradestation'], exclude=['config.py']),
+    packages=find_packages(include=['ts'], exclude=['config.py']),
 
     # I also have some package data, like photos and JSON files, so I want to include those too.
     include_package_data=True,
