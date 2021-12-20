@@ -1,6 +1,6 @@
 # Tradestation Python API
 
-A Python Client library for the TradeStation API.
+A Python Client library for the TradeStation API V3.
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@ A Python Client library for the TradeStation API.
 - [Usage](#usage)
 - [Features](#features)
 - [Documentation & Resources](#documentation-and-resources)
-- [Support These Projects](#support-these-projects)
+- [About this Project](#about-this-project)
 
 ## Overview
 
@@ -42,7 +42,7 @@ The following requirements must be met to use this API:
 
 ## API Key and Credentials
 
-Each TradeStation API request requires a TradeStation Developer API Key, a consumer ID, an account password, an account number, and a redirect URI. API Keys, consumer IDs, and redirect URIs are generated from the TradeStation developer portal. To set up and create your TradeStation developer account, please refer to the [official documentation](https://developer.tdameritrade.com/content/phase-1-authentication-update-xml-based-api).
+Each TradeStation API request requires a TradeStation Developer API Key, a consumer ID, an account password, an account number, and a redirect URI. API Keys, consumer IDs, and redirect URIs are generated from the TradeStation developer portal. To set up and create your TradeStation developer account, please refer to the [official documentation](https://api.tradestation.com/docs/).
 
 Additionally, to authenticate yourself using this library, you will need to provide your account number and password for your main TradeStation account.
 
@@ -66,7 +66,7 @@ from ts.client import TradeStationClient
 ts_client = TradeStationClient(
     username="USERNAME",
     client_id="CLIENT_ID",
-    client_secret="CLIENT_SECRET",
+    client_secret="CLIENT_SECRET",  
     redirect_uri="REDIRECT_URI",
     paper_trading="PAPER_TRADING"
 )
@@ -99,17 +99,11 @@ For certain requests, in a limited fashion, it will help validate your request w
 
 ## Documentation and Resources
 
-- [Overview](https://tradestation.github.io/api-docs/#section/Overview)
-- [Paper Trading](https://tradestation.github.io/api-docs/#section/Overview/SIM-vs-LIVE)
-- [Authentication](https://tradestation.github.io/api-docs/#section/Authentication)
+- [Overview](https://api.tradestation.com/docs/fundamentals/authentication/auth-overview)
+- [Paper Trading](https://api.tradestation.com/docs/fundamentals/sim-vs-live)
+- [Authentication](https://api.tradestation.com/docs/fundamentals/authentication/auth-code)
 
-## Support these Projects
+## About this Project
 
-**Patreon:**
-Help support this project and future projects by donating to my [Patreon Page](https://www.patreon.com/sigmacoding). I'm always looking to add more content for individuals like yourself, unfortuantely some of the APIs I would require me to pay monthly fees.
+Fork from [tradestation-python-api](https://github.com/areed1192/tradestation-python-api).
 
-**YouTube:**
-If you'd like to watch more of my content, feel free to visit my YouTube channel [Sigma Coding](https://www.youtube.com/c/SigmaCoding).
-
-**Hire Me:**
-If you have a project, you think I can help you with feel free to reach out at coding.sigma@gmail.com
