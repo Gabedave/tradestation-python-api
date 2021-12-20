@@ -10,7 +10,7 @@ setup(
     name='ts',
 
     # Want to make sure people know who made it.
-    author='Alex Reed',
+    author='David Gabriel, Alex Reed',
 
     # also an email they can use to reach out.
     author_email='coding.sigma@gmail.com',
@@ -28,7 +28,7 @@ setup(
     long_description_content_type="text/markdown",
 
     # here is the URL you can find the code, this is just the GitHub URL.
-    url='https://github.com/areed1192/tradestation-python-api',
+    url='https://github.com/gabedave/tradestation-python-api',
 
     # there are some dependencies to use the library, so let's list them out.
     install_requires=[
