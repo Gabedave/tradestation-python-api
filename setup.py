@@ -13,13 +13,13 @@ setup(
     author='David Gabriel, Alex Reed',
 
     # also an email they can use to reach out.
-    author_email='coding.sigma@gmail.com',
+    author_email='gabedave01@gmail.com, coding.sigma@gmail.com',
 
     # I'm in alpha development still, so a compliant version number is a1.
     version='0.0.1',
 
     # here is a simple description of the library, this will appear when someone searches for the library on https://pypi.org/search
-    description='A trading robot that utilizes the Tradestation API.',
+    description='A python library that utilizes the Tradestation API.',
 
     # I have a long description but that will just be my README file, note the variable up above where I read the file.
     long_description=long_description,
@@ -40,7 +40,7 @@ setup(
     keywords='finance, tradestation, api, trading',
 
     # here are the packages I want "build."
-    packages=find_packages(include=['ts'], exclude=['config.py']),
+    packages=['ts'],
 
     # I also have some package data, like photos and JSON files, so I want to include those too.
     include_package_data=True,
