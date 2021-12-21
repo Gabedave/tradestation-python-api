@@ -164,7 +164,7 @@ class TradeStationClient():
 
         return full_url
 
-    def _state_manager(self, action: str) -> None:
+    def _state_manager(self, action: str, cache: bool = None) -> None:
         """Handles the state.
 
         Overview:
@@ -195,6 +195,9 @@ class TradeStationClient():
         filename = self.config['client_id'] + '_ts_state.json'
         file_path = os.path.join(dir_path, config_dir, filename)
 
+        if cache is None:
+            cache = self.config['cache_state']
+
         # If the state is initalized.
         if action == 'init':
 
@@ -202,16 +205,16 @@ class TradeStationClient():
             self.state = initialized_state
 
             # If they allowed for caching and the file exist, load the file.
-            if self.config['cache_state'] and os.path.isfile(file_path):
+            if cache and os.path.isfile(file_path):
                 with open(file=file_path, mode='r') as state_file:
                     self.state.update(json.load(fp=state_file))
 
             # If they didnt allow for caching delete the file.
-            elif not self.config['cache_state'] and os.path.isfile(file_path):
+            elif not cache and os.path.isfile(file_path):
                 os.remove(file_path)
 
         # if they want to save it and have allowed for caching then load the file.
-        elif action == 'save' and self.config['cache_state']:
+        elif action == 'save' and cache:
             with open(file=file_path, mode='w+') as state_file:
                 json.dump(obj=self.state, fp=state_file, indent=4)
 
@@ -272,20 +275,13 @@ class TradeStationClient():
 
         return False
 
-    def logout(self, temporary: bool = False) -> None:
+    async def logout(self, temporary: bool = False) -> None:
         """Clears the current TradeStation Connection state."""
 
         # change state to initalized so they will have to either get a
         # new access token or refresh token next time they use the API
-
-        if not temporary:
-            url = 'https://signin.tradestation.com/v2/logout?'
-            args = {
-                'returnTo': self.config['redirect_uri'] + '/logout',
-                'client_id': self.config['client_id']
-            }
-            self._handle_requests(url, method='get', args=args)
-        self._state_manager('init')
+        
+        self._state_manager('init', cache = temporary)
 
     async def _grab_access_token(self, full_redirect_uri: str) -> bool:
         """Grabs an access token.
@@ -421,7 +417,7 @@ class TradeStationClient():
         if 'access_token' in json_data:
             self.state['access_token'] = json_data['access_token']
         else:
-            self.logout()
+            self.logout(True)
             return False
 
         # If there is a refresh token then grab it.
