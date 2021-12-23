@@ -930,8 +930,8 @@ class TradeStationClient():
         data = {
             'C': C,
             'R': symbol,
-            'Exd': '100',
-            'Stk': '1000'
+            'Exd': '1000',
+            'Stk': '10000'
         }
         criteria = urlencode(data)
 
