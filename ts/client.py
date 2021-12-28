@@ -89,6 +89,8 @@ class TradeStationClient():
         # define a new attribute called 'authstate' and initalize it to '' (Blank). This will be used by our login function.
         self.authstate = False
 
+        self.count = 0
+
     def __repr__(self) -> str:
         """Defines the string representation of our TD Ameritrade Class instance.
 
@@ -351,9 +353,9 @@ class TradeStationClient():
         if (await self._token_validation()):
             return True
 
-        # if the current access token is expired then try and refresh access token.
-        elif self.state['refresh_token'] and await self._grab_refresh_token():
-            return True
+        # # if the current access token is expired then try and refresh access token.
+        # elif self.state['refresh_token'] and await self._grab_refresh_token():
+        #     return True
 
         # More than likely a first time login, so can't do silent authenticaiton.
         else:
@@ -389,6 +391,7 @@ class TradeStationClient():
             self._token_save(response=response)
             return True
         else:
+            print(response.json())
             return False
 
     def _token_save(self, response: requests.Response):
@@ -451,10 +454,11 @@ class TradeStationClient():
         """
 
         # Calculate the token expire time.
-        token_exp = time.time() >= self.state['access_token_expires_at']
+        token_exp = self.state['access_token_expires_at'] - time.time()
+        print(time.time(), self.state['access_token_expires_at'])
 
         # if the time to expiration is less than or equal to 0, return 0.
-        if not self.state['refresh_token'] or token_exp:
+        if not self.state['refresh_token'] or token_exp <= 0:
             token_exp = 0
         else:
             token_exp = int(token_exp)
@@ -477,7 +481,11 @@ class TradeStationClient():
         """
 
         if self._token_seconds() < nseconds and self.config['refresh_enabled']:
-            await self._grab_refresh_token()
+            print("token_seconds", self._token_seconds())
+            self.count += 1
+            print("token_validation", self.count)
+            return await self._grab_refresh_token()
+        else: return True
 
     def _authorize(self) -> str:
         """Authorizes the session.
@@ -931,7 +939,7 @@ class TradeStationClient():
             'C': C,
             'R': symbol,
             'Exd': '1000',
-            'Stk': '10000'
+            'Stk': '10'
         }
         criteria = urlencode(data)
 
