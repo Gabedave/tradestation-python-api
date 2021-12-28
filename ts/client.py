@@ -481,9 +481,9 @@ class TradeStationClient():
         """
 
         if self._token_seconds() < nseconds and self.config['refresh_enabled']:
-            print("token_seconds", self._token_seconds())
+            # print("token_seconds", self._token_seconds())
             self.count += 1
-            print("token_validation", self.count)
+            # print("token_validation", self.count)
             return await self._grab_refresh_token()
         else: return True
 
