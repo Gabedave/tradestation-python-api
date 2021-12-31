@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import asyncio
 
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -455,7 +456,7 @@ class TradeStationClient():
 
         # Calculate the token expire time.
         token_exp = self.state['access_token_expires_at'] - time.time()
-        print(time.time(), self.state['access_token_expires_at'])
+        # print(time.time(), self.state['access_token_expires_at'])
 
         # if the time to expiration is less than or equal to 0, return 0.
         if not self.state['refresh_token'] or token_exp <= 0:
@@ -483,7 +484,7 @@ class TradeStationClient():
         if self._token_seconds() < nseconds and self.config['refresh_enabled']:
             # print("token_seconds", self._token_seconds())
             self.count += 1
-            # print("token_validation", self.count)
+            print("token_validation", self.count)
             return await self._grab_refresh_token()
         else: return True
 
@@ -520,7 +521,7 @@ class TradeStationClient():
         
         return self.auth_login_url
 
-    def _handle_requests(self, url: str, method: str, headers: dict = {}, args: dict = None, stream: bool = False, payload: dict = None) -> dict:
+    async def _handle_requests(self, url: str, method: str, headers: dict = {}, args: dict = None, stream: bool = False, payload: dict = None) -> dict:
         """[summary]
 
         Arguments:
@@ -545,6 +546,7 @@ class TradeStationClient():
         ----
         dict: [description]
         """
+        await self._token_validation()
 
         streamed_content = []
         if method == 'get':
@@ -641,7 +643,7 @@ class TradeStationClient():
         )
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint,
             method='get',
             headers= self.headers()
@@ -699,7 +701,7 @@ class TradeStationClient():
             ) 
 
             # grab the response.
-            response = self._handle_requests(
+            response = await self._handle_requests(
                 url=url_endpoint,
                 method='get',
                 headers=self.headers()
@@ -755,7 +757,7 @@ class TradeStationClient():
             )
 
             # grab the response.
-            response = self._handle_requests(
+            response = await self._handle_requests(
                 url=url_endpoint,
                 method='get',
                 headers=self.headers()
@@ -785,6 +787,9 @@ class TradeStationClient():
         dict: A list of account balances for each of the accounts.
         """
 
+        # validate the token.
+        await self._token_validation()
+
         # get account_keys
         if not account_keys:
             if "AccountID" not in self.config:
@@ -793,9 +798,6 @@ class TradeStationClient():
             account_keys: List[str] = [x[0] for x in self.config['AccountID']]
 
         if isinstance(account_keys, list):
-
-            # validate the token.
-            await self._token_validation()
 
             # argument validation, account keys.
             if len(account_keys) == 0:
@@ -814,7 +816,7 @@ class TradeStationClient():
             )
 
             # grab the response.
-            response = self._handle_requests(
+            response = await self._handle_requests(
                 url=url_endpoint,
                 method='get',
                 headers=self.headers()
@@ -897,7 +899,7 @@ class TradeStationClient():
             )
 
             # grab the response.
-            response = self._handle_requests(
+            response = await self._handle_requests(
                 url=url_endpoint,
                 method='get',
                 headers=self.headers(),
@@ -949,7 +951,7 @@ class TradeStationClient():
         f'data/symbols/search/{criteria}'])
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint,
             method='get',
             headers=self.headers()
@@ -1553,7 +1555,7 @@ class TradeStationClient():
         url_endpoint = self._api_endpoint(url='orderexecution/orderconfirm')
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint, 
             method='post', 
             headers=self.headers(), 
@@ -1579,7 +1581,7 @@ class TradeStationClient():
         url_endpoint = self._api_endpoint(url='orderexecution/orders')
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint,
             method='post',
             headers=self.headers('application/json'),
@@ -1609,7 +1611,7 @@ class TradeStationClient():
 
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint,
             method='delete',
             headers=self.headers()
@@ -1617,7 +1619,7 @@ class TradeStationClient():
 
         return response
 
-    def replace_order(self, order_id: str, new_order: dict) -> dict:
+    async def replace_order(self, order_id: str, new_order: dict) -> dict:
         """Replace an order.
 
         Arguments:
@@ -1636,19 +1638,13 @@ class TradeStationClient():
 
         # define the endpoint.
         url_endpoint = self._api_endpoint(
-            url='orders/{order_id}'.format(order_id=order_id)
-        )
-
-        # define the arguments.
-        params = {
-            'access_token': self.state['access_token']
-        }
+            url='orderexecution/orders/{order_id}'.format(order_id=order_id))
 
         # grab the response.
-        response = self._handle_requests(
+        response = await self._handle_requests(
             url=url_endpoint,
             method='put',
-            args=params,
+            headers=self.headers(),
             payload=new_order
         )
 
