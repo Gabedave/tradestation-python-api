@@ -941,7 +941,7 @@ class TradeStationClient():
             'C': C,
             'R': symbol,
             'Exd': '1000',
-            'Stk': '10'
+            'Stk': '20'
         }
         criteria = urlencode(data)
 
