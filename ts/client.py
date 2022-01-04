@@ -1634,7 +1634,7 @@ class TradeStationClient():
         """
 
         # validate the token.
-        self._token_validation()
+        await self._token_validation()
 
         # define the endpoint.
         url_endpoint = self._api_endpoint(
