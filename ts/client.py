@@ -941,7 +941,7 @@ class TradeStationClient():
             'C': C,
             'R': symbol,
             'Exd': '1000',
-            'Stk': '20'
+            'Stk': '10'
         }
         criteria = urlencode(data)
 
@@ -1557,7 +1557,7 @@ class TradeStationClient():
         # grab the response.
         response = await self._handle_requests(
             url=url_endpoint, 
-            method='post', 
+            method='post',
             headers=self.headers(), 
             payload=order)
 
@@ -1576,6 +1576,7 @@ class TradeStationClient():
         """
 
         # validate the token.
+        await self._token_validation()
 
         # define the endpoint.
         url_endpoint = self._api_endpoint(url='orderexecution/orders')
