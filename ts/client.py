@@ -278,13 +278,14 @@ class TradeStationClient():
 
         return False
 
-    async def logout(self, temporary: bool = False) -> None:
+    async def logout(self, temporary: bool = False) -> bool:
         """Clears the current TradeStation Connection state."""
 
         # change state to initalized so they will have to either get a
         # new access token or refresh token next time they use the API
         
         self._state_manager('init', cache = temporary)
+        return True
 
     async def _grab_access_token(self, full_redirect_uri: str) -> bool:
         """Grabs an access token.
